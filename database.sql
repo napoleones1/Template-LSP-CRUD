@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS `pinjaman` (
     `jumlah_pinjaman` INT NOT NULL DEFAULT 0,
     `tenor` INT NOT NULL DEFAULT 1,
     `cicilan_per_bulan` INT NOT NULL DEFAULT 0,
+    `sisa_pinjaman` INT NOT NULL DEFAULT 0,
     `status` ENUM('Aktif','Lunas') NOT NULL DEFAULT 'Aktif',
     CONSTRAINT `fk_pinjaman_karyawan` FOREIGN KEY (`id_karyawan`) REFERENCES `karyawan`(`id_karyawan`) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -94,7 +95,7 @@ INSERT INTO `karyawan` (`nik`, `nama_karyawan`, `id_jabatan`, `tgl_masuk`) VALUE
 -- ============================================
 -- Data: pinjaman (contoh)
 -- ============================================
-INSERT INTO `pinjaman` (`id_karyawan`, `jumlah_pinjaman`, `tenor`, `cicilan_per_bulan`, `status`) VALUES
-(3, 5000000, 5, 1000000, 'Aktif'),
-(5, 3000000, 3, 1000000, 'Aktif'),
-(2, 6000000, 6, 1000000, 'Lunas');
+INSERT INTO `pinjaman` (`id_karyawan`, `jumlah_pinjaman`, `tenor`, `cicilan_per_bulan`, `sisa_pinjaman`, `status`) VALUES
+(3, 5000000, 5, 1000000, 5000000, 'Aktif'),
+(5, 3000000, 3, 1000000, 3000000, 'Aktif'),
+(2, 6000000, 6, 1000000, 0, 'Lunas');
