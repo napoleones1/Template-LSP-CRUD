@@ -2,16 +2,19 @@
 $page_title = 'Laporan Gaji';
 require_once __DIR__ . '/../includes/header.php';
 
-// Filter bulan & tahun (terpisah sesuai Modul 3)
-$filter_bulan = trim($_GET['bulan'] ?? '');
+$nm_bln = ['','Januari','Februari','Maret','April','Mei','Juni',
+           'Juli','Agustus','September','Oktober','November','Desember'];
+
+// Filter bulan & tahun terpisah (sesuai Modul 3)
+$filter_bulan = (int)($_GET['bulan'] ?? 0);
 $filter_tahun = trim($_GET['tahun'] ?? '');
-$filter       = '';
-if ($filter_bulan !== '' && $filter_tahun !== '') {
-    $filter = sprintf('%02d', $filter_bulan).'-'.$filter_tahun;
-}
+$filter       = ($filter_bulan > 0 && $filter_tahun !== '')
+                ? sprintf('%02d', $filter_bulan).'-'.$filter_tahun
+                : '';
 
 // Ambil daftar tahun unik untuk dropdown
-$res_tahun = mysqli_query($conn, "SELECT DISTINCT SUBSTRING(bulan_tahun,4) as tahun FROM penggajian ORDER BY tahun DESC");
+$res_tahun = mysqli_query($conn,
+    "SELECT DISTINCT SUBSTRING(bulan_tahun,4) AS tahun FROM penggajian ORDER BY tahun DESC");
 
 // Query utama
 if ($filter !== '') {
@@ -22,7 +25,7 @@ if ($filter !== '') {
         JOIN karyawan k ON p.id_karyawan = k.id_karyawan
         JOIN jabatan j  ON k.id_jabatan  = j.id_jabatan
         WHERE p.bulan_tahun = ?
-        ORDER BY p.id_penggajian DESC
+        ORDER BY k.nama_karyawan ASC
     ");
     mysqli_stmt_bind_param($stmt, 's', $filter);
     mysqli_stmt_execute($stmt);
@@ -34,18 +37,18 @@ if ($filter !== '') {
         FROM penggajian p
         JOIN karyawan k ON p.id_karyawan = k.id_karyawan
         JOIN jabatan j  ON k.id_jabatan  = j.id_jabatan
-        ORDER BY p.id_penggajian DESC
+        ORDER BY p.bulan_tahun DESC, k.nama_karyawan ASC
     ");
 }
 
-// Hitung total
+// Kumpulkan baris + hitung total (fungsi agregat SUM)
+$rows           = [];
 $total_gaji     = 0;
 $total_potongan = 0;
-$rows = [];
 while ($row = mysqli_fetch_assoc($res)) {
     $total_gaji     += $row['gaji_bersih'];
     $total_potongan += $row['potongan_pinjaman'];
-    $rows[] = $row;
+    $rows[]          = $row;
 }
 ?>
 <?php require_once __DIR__ . '/../includes/sidebar.php'; ?>
@@ -63,43 +66,47 @@ while ($row = mysqli_fetch_assoc($res)) {
             <?php unset($_SESSION['msg']); ?>
         <?php endif; ?>
 
-        <!-- Filter -->
+        <!-- ── FILTER BULAN & TAHUN ── -->
         <div class="card" style="margin-bottom:20px;">
             <div class="card-body" style="padding:15px 20px;">
-                <form method="GET" action="" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <form method="GET" action=""
+                      style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                     <label style="font-weight:600;font-size:13px;color:#555;">Filter Periode:</label>
 
-                    <!-- Dropdown Bulan -->
-                    <select name="bulan" style="padding:8px 12px;border:1px solid #ddd;border-radius:5px;font-size:13px;">
+                    <!-- Bulan -->
+                    <select name="bulan"
+                            style="padding:8px 12px;border:1px solid #ddd;border-radius:5px;font-size:13px;">
                         <option value="">-- Pilih Bulan --</option>
-                        <?php
-                        $nm_bln = [1=>'Januari',2=>'Februari',3=>'Maret',4=>'April',5=>'Mei',6=>'Juni',
-                                   7=>'Juli',8=>'Agustus',9=>'September',10=>'Oktober',11=>'November',12=>'Desember'];
-                        foreach ($nm_bln as $num => $nama):
-                        ?>
-                        <option value="<?= $num ?>" <?= $filter_bulan == $num ? 'selected' : '' ?>><?= $nama ?></option>
-                        <?php endforeach; ?>
+                        <?php for ($b = 1; $b <= 12; $b++): ?>
+                        <option value="<?= $b ?>"
+                                <?= $filter_bulan === $b ? 'selected' : '' ?>>
+                            <?= $nm_bln[$b] ?>
+                        </option>
+                        <?php endfor; ?>
                     </select>
 
-                    <!-- Dropdown Tahun -->
-                    <select name="tahun" style="padding:8px 12px;border:1px solid #ddd;border-radius:5px;font-size:13px;">
+                    <!-- Tahun -->
+                    <select name="tahun"
+                            style="padding:8px 12px;border:1px solid #ddd;border-radius:5px;font-size:13px;">
                         <option value="">-- Pilih Tahun --</option>
                         <?php while ($ty = mysqli_fetch_assoc($res_tahun)): ?>
-                        <option value="<?= $ty['tahun'] ?>" <?= $filter_tahun == $ty['tahun'] ? 'selected' : '' ?>>
+                        <option value="<?= htmlspecialchars($ty['tahun']) ?>"
+                                <?= $filter_tahun === $ty['tahun'] ? 'selected' : '' ?>>
                             <?= htmlspecialchars($ty['tahun']) ?>
                         </option>
                         <?php endwhile; ?>
                     </select>
 
                     <button type="submit" class="btn btn-primary btn-sm">&#128269; Tampilkan</button>
-                    <?php if ($filter): ?>
-                        <a href="/pelatihan/sipeka/laporan/index.php" class="btn btn-secondary btn-sm">&#10005; Reset</a>
+                    <?php if ($filter !== ''): ?>
+                        <a href="/pelatihan/sipeka/laporan/index.php"
+                           class="btn btn-secondary btn-sm">&#10005; Reset</a>
                     <?php endif; ?>
                 </form>
             </div>
         </div>
 
-        <!-- Summary Cards -->
+        <!-- ── SUMMARY CARDS ── -->
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
             <div class="stat-card blue">
                 <div class="stat-icon">&#128203;</div>
@@ -113,28 +120,40 @@ while ($row = mysqli_fetch_assoc($res)) {
                 <div class="stat-icon">&#128176;</div>
                 <div class="stat-info">
                     <h4>Total Gaji Bersih</h4>
-                    <div class="stat-value" style="font-size:16px;">Rp <?= number_format($total_gaji,0,',','.') ?></div>
-                    <div class="stat-sub"><?= $filter ? 'periode ini' : 'semua periode' ?></div>
+                    <div class="stat-value" style="font-size:15px;">
+                        Rp <?= number_format($total_gaji,0,',','.') ?>
+                    </div>
+                    <div class="stat-sub">
+                        <?= $filter !== '' ? ($nm_bln[$filter_bulan].' '.$filter_tahun) : 'semua periode' ?>
+                    </div>
                 </div>
             </div>
             <div class="stat-card red">
                 <div class="stat-icon">&#9888;</div>
                 <div class="stat-info">
                     <h4>Total Potongan</h4>
-                    <div class="stat-value" style="font-size:16px;">Rp <?= number_format($total_potongan,0,',','.') ?></div>
+                    <div class="stat-value" style="font-size:15px;">
+                        Rp <?= number_format($total_potongan,0,',','.') ?>
+                    </div>
                     <div class="stat-sub">cicilan pinjaman</div>
                 </div>
             </div>
         </div>
 
-        <!-- Tabel -->
+        <!-- ── TABEL REKAPITULASI ── -->
         <div class="card">
             <div class="card-header">
                 <h3>&#128203; Laporan Rekapitulasi Penggajian
-                    <?php if ($filter_bulan && $filter_tahun): ?>
-                        &mdash; <?= $nm_bln[(int)$filter_bulan] ?> <?= htmlspecialchars($filter_tahun) ?>
+                    <?php if ($filter !== ''): ?>
+                        &mdash; <?= $nm_bln[$filter_bulan] ?> <?= htmlspecialchars($filter_tahun) ?>
                     <?php endif; ?>
                 </h3>
+                <?php if ($filter !== '' && count($rows) > 0): ?>
+                <a href="/pelatihan/sipeka/laporan/rekap_cetak.php?bulan=<?= $filter_bulan ?>&tahun=<?= urlencode($filter_tahun) ?>"
+                   target="_blank" class="btn btn-primary btn-sm">
+                    &#128424; Cetak Rekap Periode Ini
+                </a>
+                <?php endif; ?>
             </div>
             <div class="card-body" style="padding:0;">
                 <div class="table-responsive">
@@ -154,21 +173,19 @@ while ($row = mysqli_fetch_assoc($res)) {
                         <tbody>
                             <?php if (count($rows) > 0): ?>
                                 <?php foreach ($rows as $no => $row): ?>
+                                <?php
+                                    $p2  = explode('-', $row['bulan_tahun']);
+                                    $b2  = (int)($p2[0] ?? 0);
+                                    $t2  = $p2[1] ?? '';
+                                    $nm2 = [1=>'Jan',2=>'Feb',3=>'Mar',4=>'Apr',5=>'Mei',6=>'Jun',
+                                            7=>'Jul',8=>'Ags',9=>'Sep',10=>'Okt',11=>'Nov',12=>'Des'];
+                                ?>
                                 <tr>
                                     <td><?= $no + 1 ?></td>
                                     <td><?= htmlspecialchars($row['nik']) ?></td>
                                     <td><strong><?= htmlspecialchars($row['nama_karyawan']) ?></strong></td>
                                     <td><?= htmlspecialchars($row['nama_jabatan']) ?></td>
-                                    <td>
-                                        <?php
-                                        $p2 = explode('-', $row['bulan_tahun']);
-                                        $b2 = (int)($p2[0] ?? 0);
-                                        $t2 = $p2[1] ?? '';
-                                        $nm2 = [1=>'Jan',2=>'Feb',3=>'Mar',4=>'Apr',5=>'Mei',6=>'Jun',
-                                                7=>'Jul',8=>'Ags',9=>'Sep',10=>'Okt',11=>'Nov',12=>'Des'];
-                                        echo ($nm2[$b2] ?? $row['bulan_tahun']) . ' ' . $t2;
-                                        ?>
-                                    </td>
+                                    <td><?= ($nm2[$b2] ?? '-').' '.$t2 ?></td>
                                     <td style="text-align:right;color:#e74c3c;">
                                         Rp <?= number_format($row['potongan_pinjaman'],0,',','.') ?>
                                     </td>
@@ -177,15 +194,19 @@ while ($row = mysqli_fetch_assoc($res)) {
                                     </td>
                                     <td style="text-align:center;">
                                         <a href="/pelatihan/sipeka/laporan/slip_gaji.php?id=<?= $row['id_penggajian'] ?>"
-                                           class="btn btn-info btn-sm" target="_blank">
-                                            &#128424; Cetak Slip
+                                           target="_blank" class="btn btn-info btn-sm">
+                                            &#128424; Slip
                                         </a>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
-                                <!-- Total row -->
-                                <tr style="background:#f0f4f8;font-weight:700;">
-                                    <td colspan="5" style="text-align:right;padding:12px 15px;">TOTAL</td>
+
+                                <!-- Baris Total (SUM) -->
+                                <tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #2c3e50;">
+                                    <td colspan="5"
+                                        style="text-align:right;padding:12px 15px;">
+                                        TOTAL (<?= count($rows) ?> karyawan)
+                                    </td>
                                     <td style="text-align:right;color:#e74c3c;padding:12px 15px;">
                                         Rp <?= number_format($total_potongan,0,',','.') ?>
                                     </td>
@@ -194,10 +215,14 @@ while ($row = mysqli_fetch_assoc($res)) {
                                     </td>
                                     <td></td>
                                 </tr>
+
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="8" style="text-align:center;padding:30px;color:#999;">
-                                        Belum ada data penggajian<?= $filter ? ' untuk periode ini' : '' ?>.
+                                    <td colspan="8"
+                                        style="text-align:center;padding:30px;color:#999;">
+                                        <?= $filter !== ''
+                                            ? 'Belum ada data penggajian untuk periode ini.'
+                                            : 'Belum ada data penggajian.' ?>
                                     </td>
                                 </tr>
                             <?php endif; ?>
