@@ -1,0 +1,7 @@
+# Ignore sensitive config (edit koneksi.php sebelum push jika perlu)
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
