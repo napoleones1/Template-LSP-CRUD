@@ -1,19 +1,14 @@
 ﻿<?php
 session_start();
-if (!isset($_SESSION['user'])) {
-    header("Location: /pelatihan/sipeka/login.php"); exit;
-}
+if (!isset($_SESSION['user'])) { header("Location: /pelatihan/sipeka/login.php"); exit; }
 require_once __DIR__ . '/../config/koneksi.php';
 
 $id = (int)($_GET['id'] ?? 0);
-if ($id <= 0) {
-    echo '<p style="text-align:center;padding:40px;">ID tidak valid. <a href="/pelatihan/sipeka/laporan/index.php">Kembali</a></p>';
-    exit;
-}
+if ($id <= 0) { echo '<p style="padding:30px;font-family:Arial">ID tidak valid. <a href="/pelatihan/sipeka/laporan/index.php">Kembali</a></p>'; exit; }
 
 $stmt = mysqli_prepare($conn, "
     SELECT p.id_penggajian, p.bulan_tahun, p.potongan_pinjaman, p.gaji_bersih,
-           k.nik, k.nama_karyawan, k.tgl_masuk,
+           k.nik, k.nama_karyawan, k.tgl_masuk, k.id_karyawan,
            j.nama_jabatan, j.gapok, j.tunjangan_makan
     FROM penggajian p
     JOIN karyawan k ON p.id_karyawan = k.id_karyawan
@@ -22,21 +17,30 @@ $stmt = mysqli_prepare($conn, "
 ");
 mysqli_stmt_bind_param($stmt, 'i', $id);
 mysqli_stmt_execute($stmt);
-$data = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+$d = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
 mysqli_stmt_close($stmt);
+if (!$d) { echo '<p style="padding:30px;font-family:Arial">Data tidak ditemukan. <a href="/pelatihan/sipeka/laporan/index.php">Kembali</a></p>'; exit; }
 
-if (!$data) {
-    echo '<p style="text-align:center;padding:40px;">Data tidak ditemukan. <a href="/pelatihan/sipeka/laporan/index.php">Kembali</a></p>';
-    exit;
-}
+// Sisa pinjaman
+$stmt2 = mysqli_prepare($conn, "SELECT sisa_pinjaman, tenor, cicilan_per_bulan, jumlah_pinjaman FROM pinjaman WHERE id_karyawan=? AND status='Aktif' ORDER BY id_pinjaman ASC LIMIT 1");
+mysqli_stmt_bind_param($stmt2, 'i', $d['id_karyawan']);
+mysqli_stmt_execute($stmt2);
+$pin = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt2));
+mysqli_stmt_close($stmt2);
 
-$parts   = explode('-', $data['bulan_tahun']);
-$bln     = (int)($parts[0] ?? date('m'));
+$parts   = explode('-', $d['bulan_tahun']);
+$bln     = (int)($parts[0] ?? 1);
 $thn     = $parts[1] ?? date('Y');
-$nm      = [1=>'Januari',2=>'Februari',3=>'Maret',4=>'April',5=>'Mei',6=>'Juni',
-            7=>'Juli',8=>'Agustus',9=>'September',10=>'Oktober',11=>'November',12=>'Desember'];
-$periode       = ($nm[$bln] ?? '-').' '.$thn;
-$total_pendapatan = $data['gapok'] + $data['tunjangan_makan'];
+$nm_bln  = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+$periode = $nm_bln[$bln].' '.$thn;
+$total_pendapatan = $d['gapok'] + $d['tunjangan_makan'];
+
+// Cicilan ke berapa
+$cicilan_ke = '';
+if ($pin && $d['potongan_pinjaman'] > 0) {
+    $sdh = (int)round(($pin['jumlah_pinjaman'] - $pin['sisa_pinjaman']) / max(1, $pin['cicilan_per_bulan']));
+    $cicilan_ke = 'ke-'.$sdh.' dari '.$pin['tenor'].' bulan | sisa: '.rp($pin['sisa_pinjaman']);
+}
 
 function terbilang($n) {
     $n = abs((int)$n);
@@ -51,311 +55,299 @@ function terbilang($n) {
     if ($n < 1000000000) return terbilang((int)($n/1000000)).' juta '.terbilang($n%1000000);
     return terbilang((int)($n/1000000000)).' miliar '.terbilang($n%1000000000);
 }
+function rp($n) { return 'Rp '.number_format($n,0,',','.'); }
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Slip Gaji - <?= htmlspecialchars($data['nama_karyawan']) ?></title>
+<title>Slip Gaji — <?= htmlspecialchars($d['nama_karyawan']) ?></title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    background: #e8ecf0;
-    color: #2c3e50;
-    font-size: 13px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    background: #e0e0e0;
+    color: #000;
 }
 
-/* ── TOOLBAR (screen only) ── */
+/* toolbar — screen only */
 .toolbar {
-    background: #2c3e50;
-    padding: 10px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: #fff;
-    font-size: 13px;
+    background: #333; color: #fff;
+    padding: 8px 18px;
+    display: flex; align-items: center; justify-content: space-between;
 }
-.toolbar a, .toolbar button {
-    background: #27ae60; color: #fff;
-    border: none; padding: 7px 16px;
-    border-radius: 5px; cursor: pointer;
-    font-size: 13px; text-decoration: none;
-    margin-left: 8px;
+.toolbar button {
+    background: #555; color: #fff; border: 1px solid #888;
+    padding: 5px 14px; cursor: pointer; font-size: 12px; border-radius: 3px;
 }
-.toolbar a { background: #7f8c8d; }
+.toolbar button:hover { background: #222; }
+.toolbar a { color: #ccc; text-decoration: none; margin-right: 12px; font-size: 12px; }
+.toolbar a:hover { color: #fff; }
 
-/* ── SLIP WRAPPER ── */
-.slip {
+/* paper */
+.paper {
     width: 210mm;
     min-height: 297mm;
     background: #fff;
-    margin: 20px auto;
+    margin: 14px auto 20px;
+    padding: 16mm 16mm 12mm;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 4px 24px rgba(0,0,0,.18);
+    box-shadow: 0 1px 8px rgba(0,0,0,.25);
+}
+
+/* header */
+.hd { border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+.hd-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.co-name { font-size: 17px; font-weight: bold; }
+.co-sub  { font-size: 10px; color: #444; margin-top: 3px; line-height: 1.6; }
+.doc-box { border: 1.5px solid #000; padding: 5px 12px; text-align: center; }
+.doc-box .doc-title { font-size: 13px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; }
+.doc-box .doc-info  { font-size: 10px; color: #333; margin-top: 3px; }
+
+/* info karyawan */
+.info-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 2px 20px;
+    border: 1px solid #999; padding: 8px 12px;
+    margin-bottom: 12px; font-size: 11.5px;
+    background: #fafafa;
+}
+.ir { display: flex; }
+.il { width: 115px; color: #444; flex-shrink: 0; }
+.is { margin: 0 6px; }
+.iv { color: #000; }
+
+/* tabel gaji */
+.tbl-title {
+    font-size: 11px; font-weight: bold; letter-spacing: .5px;
+    text-transform: uppercase; border: 1px solid #999;
+    border-bottom: none; padding: 4px 10px; background: #f0f0f0;
+}
+table.gaji {
+    width: 100%; border-collapse: collapse;
+    font-size: 11.5px; margin-bottom: 0;
+}
+table.gaji th {
+    border: 1px solid #999; padding: 4px 10px;
+    background: #f0f0f0; text-align: left; font-weight: bold;
+}
+table.gaji th.r, table.gaji td.r { text-align: right; }
+table.gaji td {
+    border: 1px solid #ccc; padding: 5px 10px;
+}
+table.gaji tr.sub td {
+    border-top: 1.5px solid #999; font-weight: bold; background: #f5f5f5;
+}
+table.gaji td.zero { color: #aaa; }
+
+/* total */
+.total-row {
+    border: 1.5px solid #000; border-top: none;
+    padding: 8px 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    background: #f5f5f5;
+}
+.total-row .tl { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: .5px; }
+.total-row .tv { font-size: 16px; font-weight: bold; }
+
+/* terbilang */
+.terb {
+    border: 1px solid #999; border-top: none;
+    padding: 6px 12px; font-size: 11px; font-style: italic;
+    background: #fafafa; margin-bottom: 16px;
+}
+
+/* ttd */
+.ttd {
+    display: flex; justify-content: space-between;
+    margin-top: auto; padding-top: 14px;
+    border-top: 1px dashed #aaa;
+}
+.ttd-col { text-align: center; width: 30%; }
+.ttd-place { font-size: 10.5px; color: #444; margin-bottom: 10px; }
+.ttd-judul { font-size: 11px; font-weight: bold; }
+.ttd-space { height: 48px; }
+.ttd-line  { border-top: 1px solid #000; margin: 0 8px; }
+.ttd-nama  { font-size: 11px; font-weight: bold; margin-top: 4px; }
+.ttd-pos   { font-size: 10px; color: #555; }
+
+/* footer */
+.foot {
+    margin-top: 14px; padding-top: 6px;
+    border-top: 1px solid #ddd;
+    font-size: 9.5px; color: #888;
+    display: flex; justify-content: space-between;
+}
+
+/* ── PRINT ── */
+@media print {
+    @page { size: A4 portrait; margin: 0; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { background: #fff !important; }
+    .toolbar { display: none !important; }
+    .paper {
+        width: 100% !important;
+        height: 297mm !important;
+        min-height: unset !important;
+        margin: 0 !important;
+        padding: 12mm 14mm 10mm !important;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+    }
 }
 </style>
 </head>
 <body>
 
-<!-- toolbar hanya di layar -->
 <div class="toolbar">
-    <span>&#128203; Slip Gaji &mdash; <?= htmlspecialchars($data['nama_karyawan']) ?> &mdash; <?= $periode ?></span>
-    <div>
-        <button onclick="window.print()">&#128424; Cetak / Simpan PDF</button>
-        <a href="/pelatihan/sipeka/laporan/index.php">&#8592; Kembali</a>
-    </div>
+    <span>
+        <a href="/pelatihan/sipeka/laporan/index.php">&#8592; Kembali ke Laporan</a>
+        Slip Gaji &mdash; <?= htmlspecialchars($d['nama_karyawan']) ?> &mdash; <?= $periode ?>
+    </span>
+    <button onclick="window.print()">&#128424; Cetak / Simpan PDF</button>
 </div>
 
-<div class="slip">
+<div class="paper">
 
-  <!-- ── HEADER ── -->
-  <div style="background:linear-gradient(135deg,#1a2741 0%,#2d3e55 55%,#1a5c32 100%);
-              padding:18px 24px;display:flex;align-items:center;
-              justify-content:space-between;color:#fff;">
-    <div style="display:flex;align-items:center;gap:14px;">
-      <div style="width:48px;height:48px;background:rgba(255,255,255,.15);
-                  border-radius:10px;display:flex;align-items:center;
-                  justify-content:center;font-size:22px;border:1px solid rgba(255,255,255,.2);">
-        &#127970;
-      </div>
+  <!-- HEADER -->
+  <div class="hd">
+    <div class="hd-top">
       <div>
-        <div style="font-size:18px;font-weight:700;">PT. SIPEKA INDONESIA</div>
-        <div style="font-size:10px;color:rgba(255,255,255,.6);margin-top:2px;">Jl. Sudirman Kav. 52-53, Jakarta Pusat 10220</div>
-        <div style="font-size:10px;color:rgba(255,255,255,.6);">Telp: (021) 5551234 &nbsp;|&nbsp; hrd@sipeka.co.id</div>
+        <div class="co-name">PT. SIPEKA INDONESIA</div>
+        <div class="co-sub">
+          Jl. Jend. Sudirman Kav. 52-53, Jakarta Pusat 10220<br>
+          Telp: (021) 5551234 &nbsp;|&nbsp; Fax: (021) 5551235 &nbsp;|&nbsp; hrd@sipeka.co.id
+        </div>
+      </div>
+      <div class="doc-box">
+        <div class="doc-title">Slip Gaji Karyawan</div>
+        <div class="doc-info">
+          Periode : <?= $periode ?><br>
+          No. : SGJ/<?= str_pad($d['id_penggajian'],4,'0',STR_PAD_LEFT) ?>/<?= $thn ?>
+        </div>
       </div>
     </div>
-    <div style="text-align:right;">
-      <div style="display:inline-block;background:#27ae60;color:#fff;
-                  font-size:9px;font-weight:700;letter-spacing:2px;
-                  padding:3px 10px;border-radius:20px;margin-bottom:4px;">SLIP GAJI KARYAWAN</div>
-      <div style="font-size:17px;font-weight:700;"><?= htmlspecialchars($periode) ?></div>
-      <div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:2px;">
-        No: SGJ/<?= str_pad($data['id_penggajian'],4,'0',STR_PAD_LEFT) ?>/<?= $thn ?>
-      </div>
-      <div style="font-size:10px;color:rgba(255,255,255,.5);">Cetak: <?= date('d/m/Y H:i') ?></div>
-    </div>
-  </div>
-  <!-- stripe -->
-  <div style="height:4px;background:linear-gradient(90deg,#27ae60,#3498db,#1a2741);"></div>
-
-  <!-- ── INFO KARYAWAN ── -->
-  <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
-              background:#eef2f7;padding:6px 24px;border-bottom:1px solid #d8e0ec;
-              border-top:1px solid #d8e0ec;color:#2c3e50;">
-    &#128100;&nbsp; Informasi Karyawan
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;padding:12px 24px 14px;
-              border-bottom:1px solid #d8e0ec;gap:1px 20px;">
-    <?php
-    $emp = [
-        ['NIK',           $data['nik']],
-        ['Jabatan',       $data['nama_jabatan']],
-        ['Nama Karyawan', '<strong>'.$data['nama_karyawan'].'</strong>'],
-        ['Tgl. Masuk',    date('d F Y', strtotime($data['tgl_masuk']))],
-        ['Periode Gaji',  '<strong>'.$periode.'</strong>'],
-        ['Departemen',    'Human Resources Dept.'],
-    ];
-    foreach ($emp as $e):
-    ?>
-    <div style="display:flex;align-items:baseline;padding:3px 0;">
-      <span style="width:125px;font-size:11px;color:#7f8c8d;flex-shrink:0;"><?= $e[0] ?></span>
-      <span style="margin:0 8px;color:#bdc3c7;">:</span>
-      <span style="font-size:11.5px;"><?= $e[1] ?></span>
-    </div>
-    <?php endforeach; ?>
   </div>
 
-  <!-- ── TABEL PENDAPATAN & POTONGAN ── -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:2px solid #d8e0ec;flex:1;">
-
-    <!-- Pendapatan -->
-    <div style="border-right:1px solid #d8e0ec;">
-      <div style="background:#27ae60;color:#fff;font-size:10px;font-weight:700;
-                  letter-spacing:1.5px;padding:7px 20px;">&#9650;&nbsp; PENDAPATAN</div>
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
-        <tbody>
-          <?php
-          $pendapatan = [
-            ['Gaji Pokok',           'Rp '.number_format($data['gapok'],0,',','.')],
-            ['Tunjangan Makan',      'Rp '.number_format($data['tunjangan_makan'],0,',','.')],
-            ['Tunjangan Transportasi','<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Tunjangan Kesehatan',  '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Tunjangan Jabatan',    '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Bonus / Insentif',     '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Uang Lembur',          '<span style="color:#c8cfd8">Rp 0</span>'],
-          ];
-          foreach ($pendapatan as $i => $r):
-          ?>
-          <tr style="border-bottom:1px solid #f0f2f5;<?= ($i%2==1)?'background:#fafbfd':'' ?>">
-            <td style="padding:8px 20px;"><?= $r[0] ?></td>
-            <td style="padding:8px 20px;text-align:right;"><?= $r[1] ?></td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-        <tfoot>
-          <tr style="background:#eef2f7;border-top:2px solid #d8e0ec;">
-            <td style="padding:10px 20px;font-weight:700;color:#1a5c32;">Total Pendapatan</td>
-            <td style="padding:10px 20px;text-align:right;font-weight:700;color:#1a5c32;">
-              Rp <?= number_format($total_pendapatan,0,',','.') ?>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+  <!-- INFO KARYAWAN -->
+  <div class="info-grid">
+    <div class="ir">
+      <span class="il">NIK</span><span class="is">:</span>
+      <span class="iv"><?= htmlspecialchars($d['nik']) ?></span>
     </div>
-
-    <!-- Potongan -->
-    <div>
-      <div style="background:#e74c3c;color:#fff;font-size:10px;font-weight:700;
-                  letter-spacing:1.5px;padding:7px 20px;">&#9660;&nbsp; POTONGAN</div>
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
-        <tbody>
-          <?php
-          $potongan = [
-            ['Cicilan Pinjaman',       $data['potongan_pinjaman']>0
-              ? '<span style="color:#e74c3c">Rp '.number_format($data['potongan_pinjaman'],0,',','.').'</span>'
-              : '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['BPJS Kesehatan (1%)',    '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['BPJS Ketenagakerjaan',   '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['PPh 21',                 '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Absensi / Terlambat',    '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Iuran Koperasi',         '<span style="color:#c8cfd8">Rp 0</span>'],
-            ['Potongan Lainnya',       '<span style="color:#c8cfd8">Rp 0</span>'],
-          ];
-          foreach ($potongan as $i => $r):
-          ?>
-          <tr style="border-bottom:1px solid #f0f2f5;<?= ($i%2==1)?'background:#fafbfd':'' ?>">
-            <td style="padding:8px 20px;"><?= $r[0] ?></td>
-            <td style="padding:8px 20px;text-align:right;"><?= $r[1] ?></td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-        <tfoot>
-          <tr style="background:#eef2f7;border-top:2px solid #d8e0ec;">
-            <td style="padding:10px 20px;font-weight:700;color:#922b21;">Total Potongan</td>
-            <td style="padding:10px 20px;text-align:right;font-weight:700;color:#922b21;">
-              Rp <?= number_format($data['potongan_pinjaman'],0,',','.') ?>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+    <div class="ir">
+      <span class="il">Jabatan</span><span class="is">:</span>
+      <span class="iv"><?= htmlspecialchars($d['nama_jabatan']) ?></span>
     </div>
-
-  </div><!-- /tabel -->
-
-  <!-- ── TOTAL BERSIH ── -->
-  <div style="display:flex;align-items:center;justify-content:space-between;
-              background:linear-gradient(135deg,#1a2741,#2d3e55);color:#fff;padding:15px 24px;">
-    <div style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;letter-spacing:1px;">
-      <span style="font-size:22px;">&#128176;</span> GAJI BERSIH DITERIMA
+    <div class="ir">
+      <span class="il">Nama Karyawan</span><span class="is">:</span>
+      <span class="iv"><b><?= htmlspecialchars($d['nama_karyawan']) ?></b></span>
     </div>
-    <div style="font-size:26px;font-weight:800;color:#2ecc71;">
-      Rp <?= number_format($data['gaji_bersih'],0,',','.') ?>
+    <div class="ir">
+      <span class="il">Tgl. Masuk</span><span class="is">:</span>
+      <span class="iv"><?= date('d F Y', strtotime($d['tgl_masuk'])) ?></span>
+    </div>
+    <div class="ir">
+      <span class="il">Periode Gaji</span><span class="is">:</span>
+      <span class="iv"><b><?= $periode ?></b></span>
+    </div>
+    <div class="ir">
+      <span class="il">Tgl. Cetak</span><span class="is">:</span>
+      <span class="iv"><?= date('d F Y') ?></span>
     </div>
   </div>
 
-  <!-- ── TERBILANG ── -->
-  <div style="background:#eafaf1;border-bottom:1px solid #a9dfbf;
-              padding:9px 24px;font-size:11.5px;color:#1a5c32;">
-    <strong>Terbilang:</strong> &ldquo;<?= ucwords(terbilang($data['gaji_bersih'])) ?> Rupiah&rdquo;
+  <!-- TABEL RINCIAN -->
+  <div class="tbl-title">Rincian Penghasilan dan Potongan</div>
+  <table class="gaji">
+    <thead>
+      <tr>
+        <th style="width:45%">Komponen Penghasilan</th>
+        <th class="r" style="width:20%">Jumlah</th>
+        <th style="width:35%">Komponen Potongan</th>
+        <th class="r" style="width:20%">Jumlah</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Baris 1 -->
+      <tr>
+        <td>Gaji Pokok</td>
+        <td class="r"><?= rp($d['gapok']) ?></td>
+        <td>
+          Cicilan Pinjaman
+          <?php if ($cicilan_ke): ?>
+            <br><span style="font-size:10px;color:#555;"><?= htmlspecialchars($cicilan_ke) ?></span>
+          <?php endif; ?>
+        </td>
+        <td class="r <?= $d['potongan_pinjaman'] == 0 ? 'zero' : '' ?>">
+          <?= rp($d['potongan_pinjaman']) ?>
+        </td>
+      </tr>
+      <!-- Baris 2 -->
+      <tr>
+        <td>Tunjangan Makan</td>
+        <td class="r"><?= rp($d['tunjangan_makan']) ?></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <!-- Subtotal -->
+      <tr class="sub">
+        <td><b>Total Penghasilan</b></td>
+        <td class="r"><b><?= rp($total_pendapatan) ?></b></td>
+        <td><b>Total Potongan</b></td>
+        <td class="r"><b><?= rp($d['potongan_pinjaman']) ?></b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- TOTAL BERSIH -->
+  <div class="total-row">
+    <span class="tl">Gaji Bersih yang Diterima</span>
+    <span class="tv"><?= rp($d['gaji_bersih']) ?></span>
   </div>
 
-  <!-- ── REKAP 3 KOLOM ── -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
-              border-bottom:1px solid #d8e0ec;flex:1;">
-    <?php
-    $rekap_cols = [
-      ['&#128197; Rekap Kehadiran', [
-        ['Hari Kerja', '22 Hari'],
-        ['Hadir', '22 Hari'],
-        ['Tidak Hadir', '0 Hari'],
-        ['Sakit / Izin', '0 Hari'],
-        ['Lembur', '0 Jam'],
-      ]],
-      ['&#128203; Info Pinjaman', [
-        ['Status', $data['potongan_pinjaman']>0 ? 'Aktif' : 'Tidak Ada'],
-        ['Cicilan Bulan Ini', 'Rp '.number_format($data['potongan_pinjaman'],0,',','.')],
-        ['Sisa Tenor', '-'],
-        ['Metode Bayar', 'Transfer Bank'],
-        ['Tgl Transfer', '25 '.$periode],
-      ]],
-      ['&#128184; Ringkasan', [
-        ['Total Pendapatan', 'Rp '.number_format($total_pendapatan,0,',','.')],
-        ['Total Potongan', 'Rp '.number_format($data['potongan_pinjaman'],0,',','.')],
-        ['Gaji Bersih', 'Rp '.number_format($data['gaji_bersih'],0,',','.')],
-        ['Periode', $periode],
-        ['Status', 'Sudah Dibayar'],
-      ]],
-    ];
-    foreach ($rekap_cols as $ci => $col):
-    ?>
-    <div style="padding:12px 18px;<?= $ci<2 ? 'border-right:1px solid #d8e0ec;' : '' ?>">
-      <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
-                  color:#2c3e50;margin-bottom:8px;padding-bottom:5px;
-                  border-bottom:2px solid #27ae60;"><?= $col[0] ?></div>
-      <table style="width:100%;border-collapse:collapse;font-size:10.5px;">
-        <?php foreach ($col[1] as $r): ?>
-        <tr>
-          <td style="padding:3px 3px;color:#7f8c8d;width:52%;"><?= $r[0] ?></td>
-          <td style="padding:3px 2px;color:#bdc3c7;width:6px;">:</td>
-          <td style="padding:3px 3px;color:#2c3e50;font-weight:600;"><?= $r[1] ?></td>
-        </tr>
-        <?php endforeach; ?>
-      </table>
+  <!-- TERBILANG -->
+  <div class="terb">
+    Terbilang : <i>&ldquo;<?= ucwords(terbilang($d['gaji_bersih'])) ?> Rupiah&rdquo;</i>
+  </div>
+
+  <!-- TANDA TANGAN -->
+  <div class="ttd">
+    <div class="ttd-col">
+      <div class="ttd-place">Jakarta, <?= date('d F Y') ?></div>
+      <div class="ttd-judul">Karyawan,</div>
+      <div class="ttd-space"></div>
+      <div class="ttd-line"></div>
+      <div class="ttd-nama"><?= htmlspecialchars($d['nama_karyawan']) ?></div>
+      <div class="ttd-pos"><?= htmlspecialchars($d['nama_jabatan']) ?></div>
     </div>
-    <?php endforeach; ?>
-  </div>
-
-  <!-- ── TTD ── -->
-  <div style="display:flex;justify-content:space-around;padding:16px 24px 12px;
-              border-bottom:1px solid #d8e0ec;">
-    <?php
-    $ttd = [
-      ['Karyawan',      $data['nama_karyawan'],    $data['nama_jabatan']],
-      ['Manager HRD',   '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )', 'Human Resources Dept.'],
-      ['Direktur Utama','( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )', 'PT. SIPEKA INDONESIA'],
-    ];
-    foreach ($ttd as $t):
-    ?>
-    <div style="text-align:center;width:185px;">
-      <div style="font-size:11px;color:#888;margin-bottom:3px;">Jakarta, <?= date('d F Y') ?></div>
-      <div style="font-size:12px;font-weight:700;color:#2c3e50;"><?= $t[0] ?></div>
-      <div style="height:52px;"></div>
-      <div style="border-top:1.5px solid #2c3e50;margin:0 10px;"></div>
-      <div style="font-size:11.5px;font-weight:600;color:#2c3e50;margin-top:5px;"><?= $t[1] ?></div>
-      <div style="font-size:10px;color:#888;margin-top:2px;"><?= $t[2] ?></div>
+    <div class="ttd-col">
+      <div class="ttd-place">&nbsp;</div>
+      <div class="ttd-judul">Mengetahui,<br>Manager HRD</div>
+      <div class="ttd-space"></div>
+      <div class="ttd-line"></div>
+      <div class="ttd-nama">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+      <div class="ttd-pos">Human Resources Dept.</div>
     </div>
-    <?php endforeach; ?>
+    <div class="ttd-col">
+      <div class="ttd-place">&nbsp;</div>
+      <div class="ttd-judul">Menyetujui,<br>Direktur Utama</div>
+      <div class="ttd-space"></div>
+      <div class="ttd-line"></div>
+      <div class="ttd-nama">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+      <div class="ttd-pos">PT. SIPEKA INDONESIA</div>
+    </div>
   </div>
 
-  <!-- ── FOOTER ── -->
-  <div style="margin-top:auto;background:#1a2741;color:rgba(255,255,255,.5);
-              padding:10px 24px;font-size:10px;
-              display:flex;justify-content:space-between;align-items:center;">
-    <span>&#9888; Dicetak otomatis oleh sistem SIPEKA &mdash; <?= date('d/m/Y H:i:s') ?></span>
-    <span>Slip ini sah tanpa tanda tangan basah bila dicetak dari sistem resmi.</span>
+  <!-- FOOTER DOKUMEN -->
+  <div class="foot">
+    <span>Dicetak oleh sistem SIPEKA pada <?= date('d/m/Y H:i:s') ?></span>
+    <span>Dokumen ini sah tanpa tanda tangan basah bila dicetak dari sistem resmi perusahaan.</span>
   </div>
 
-</div><!-- /slip -->
-
-<style>
-@media print {
-  @page { size: A4 portrait; margin: 0; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  html, body { margin: 0; padding: 0; background: #fff; }
-  .toolbar    { display: none !important; }
-  .slip {
-    width: 210mm !important;
-    height: 297mm !important;
-    min-height: unset !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    page-break-inside: avoid;
-  }
-}
-</style>
+</div><!-- /paper -->
 </body>
 </html>
